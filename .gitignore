@@ -21,3 +21,4 @@ examples/methods
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+!libcurl.so
