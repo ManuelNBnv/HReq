@@ -25,6 +25,8 @@ itsuki-http/
 │   ├── client.suki
 │   ├── api.suki
 │   └── methods.suki
+├── img/
+│   └── itsuki_logo.png
 ├── include/
 │   ├── http.huki
 │   ├── json.h
