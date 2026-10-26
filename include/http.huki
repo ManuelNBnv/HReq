@@ -1,0 +1,32 @@
+#pragma once
+
+// itsuki-http
+// Los buffers son administrados por quien llama.
+//
+// Métodos compatibles:
+// GET, POST, PUT, PATCH y DELETE.
+//
+// Retorno:
+// >= 0: cantidad de bytes recibidos.
+// -1: error de conexión o de petición.
+// -2: la respuesta supera el buffer disponible.
+//
+// status_code recibe el código HTTP.
+// headers contiene cabeceras separadas por saltos de línea.
+
+fn http_request(url: char*, method: char*, request_body: char*, headers: char*, response_buffer: char*, response_capacity: int, status_code: int*) -> int;
+
+// GET sin cuerpo.
+fn http_get(url: char*, body_buffer: char*, body_capacity: int, status_code: int*) -> int;
+
+// POST con cuerpo JSON.
+fn http_post_json(url: char*, json_body: char*, body_buffer: char*, body_capacity: int, status_code: int*) -> int;
+
+// PUT con cuerpo JSON.
+fn http_put_json(url: char*, json_body: char*, body_buffer: char*, body_capacity: int, status_code: int*) -> int;
+
+// PATCH con cuerpo JSON.
+fn http_patch_json(url: char*, json_body: char*, body_buffer: char*, body_capacity: int, status_code: int*) -> int;
+
+// DELETE sin cuerpo.
+fn http_delete(url: char*, body_buffer: char*, body_capacity: int, status_code: int*) -> int;

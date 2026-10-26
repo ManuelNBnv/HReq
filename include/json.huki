@@ -1,0 +1,6 @@
+#pragma once
+
+fn json_get_string(json: char*, key: char*, output: char*, output_capacity: int) -> int;
+fn json_get_int(json: char*, key: char*, output: int*) -> int;
+fn json_get_bool(json: char*, key: char*, output: int*) -> int;
+fn json_is_null(json: char*, key: char*) -> int;

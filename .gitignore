@@ -1,0 +1,23 @@
+# Ejecutables compilados
+examples/client
+examples/api
+examples/methods
+
+# Archivos de objetos y librerías compiladas
+*.o
+*.a
+*.so
+*.so.*
+
+# Archivos temporales y copias de seguridad
+*.bak
+*.tmp
+*~
+
+# Archivos de swap de editores
+*.swp
+*.swo
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db

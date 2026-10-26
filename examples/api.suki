@@ -1,0 +1,52 @@
+#include <fundamental.huki>
+#include "../include/http.huki"
+#include "../include/json.huki"
+
+fn main() -> void {
+    char body[8192];
+    int status = 0;
+
+    int received = http_get(
+        "https://jsonplaceholder.typicode.com/users/1",
+        body,
+        8192,
+        &status
+    );
+
+    if (received < 0) {
+        println("Error al realizar la petición HTTP");
+        return;
+    }
+
+    printf("Estado HTTP: %d\n", status);
+
+    if (status != 200) {
+        println("La API no devolvió un estado correcto");
+        return;
+    }
+
+    char nombre[128];
+    char usuario[128];
+    char email[128];
+    char ciudad[128];
+    char empresa[128];
+    int id = 0;
+
+    if (json_get_string(body, "name", nombre, 128) >= 0)
+        printf("Nombre: %s\n", nombre);
+
+    if (json_get_string(body, "username", usuario, 128) >= 0)
+        printf("Usuario: %s\n", usuario);
+
+    if (json_get_string(body, "email", email, 128) >= 0)
+        printf("Email: %s\n", email);
+
+    if (json_get_string(body, "address.city", ciudad, 128) >= 0)
+        printf("Ciudad: %s\n", ciudad);
+
+    if (json_get_string(body, "company.name", empresa, 128) >= 0)
+        printf("Empresa: %s\n", empresa);
+
+    if (json_get_int(body, "id", &id) == 1)
+        printf("ID: %d\n", id);
+}
