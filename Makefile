@@ -1,7 +1,7 @@
 ITSUKI ?= itsuki
 
 INCLUDES = -Iinclude -I/usr/include/x86_64-linux-gnu
-CURL_LIBS = -L/usr/lib/i386-linux-gnu -lcurl
+CURL_LIBS = -L. -lcurl
 
 .PHONY: all check build-client build-api build-methods \
         run-client run-api run-methods clean
