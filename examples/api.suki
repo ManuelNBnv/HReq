@@ -1,6 +1,6 @@
 #include <fundamental.huki>
-#include "../include/http.huki"
-#include "../include/json.huki"
+#include "../hreq.huki"
+#include "../json.huki"
 
 fn main() -> void {
     char body[8192];

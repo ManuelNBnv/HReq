@@ -1,0 +1,61 @@
+
+#pragma once
+
+// HReq - Biblioteca HTTP para Itsuki.
+//
+// Retorno:
+// >= 0: cantidad de bytes recibidos.
+// -1: error de petición o conexión.
+// -2: la respuesta supera el buffer disponible.
+//
+// Los buffers son administrados por quien llama.
+// Las cabeceras se separan mediante saltos de línea.
+// status_code recibe el código HTTP.
+
+fn http_request(
+    url: char*,
+    method: char*,
+    request_body: char*,
+    headers: char*,
+    response_buffer: char*,
+    response_capacity: int,
+    status_code: int*
+) -> int;
+
+fn http_get(
+    url: char*,
+    body_buffer: char*,
+    body_capacity: int,
+    status_code: int*
+) -> int;
+
+fn http_post_json(
+    url: char*,
+    json_body: char*,
+    body_buffer: char*,
+    body_capacity: int,
+    status_code: int*
+) -> int;
+
+fn http_put_json(
+    url: char*,
+    json_body: char*,
+    body_buffer: char*,
+    body_capacity: int,
+    status_code: int*
+) -> int;
+
+fn http_patch_json(
+    url: char*,
+    json_body: char*,
+    body_buffer: char*,
+    body_capacity: int,
+    status_code: int*
+) -> int;
+
+fn http_delete(
+    url: char*,
+    body_buffer: char*,
+    body_capacity: int,
+    status_code: int*
+) -> int;

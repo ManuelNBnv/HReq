@@ -1,110 +1,134 @@
+
 #include <ctype.h>
 #include <curl/curl.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct http_buffer {
-  char *data;
-  size_t capacity;
-  size_t stored;
-  int overflow;
-};
+#define HREQ_CONNECT_TIMEOUT 10L
+#define HREQ_TOTAL_TIMEOUT 30L
+#define HREQ_USER_AGENT "HReq/1.0"
 
-static size_t http_write_callback(char *incoming, size_t size, size_t count,
+typedef struct {
+  char *buffer;
+  size_t capacity;
+  size_t length;
+  int overflow;
+} HttpResponse;
+
+static size_t http_write_callback(char *data, size_t size, size_t count,
                                   void *userdata) {
-  struct http_buffer *buffer = (struct http_buffer *)userdata;
+  HttpResponse *response = (HttpResponse *)userdata;
+
+  if (size != 0 && count > SIZE_MAX / size) {
+    response->overflow = 1;
+    return 0;
+  }
+
   size_t bytes = size * count;
 
-  if (!buffer || !buffer->data || buffer->capacity == 0)
-    return 0;
-
-  size_t available = buffer->capacity - 1 - buffer->stored;
-
-  if (bytes > available) {
-    if (available > 0) {
-      memcpy(buffer->data + buffer->stored, incoming, available);
-      buffer->stored += available;
-    }
-
-    buffer->data[buffer->stored] = '\0';
-    buffer->overflow = 1;
-
-    // Detiene la transferencia si no cabe la respuesta.
+  if (bytes > response->capacity - 1 - response->length) {
+    response->overflow = 1;
     return 0;
   }
 
-  if (bytes > 0) {
-    memcpy(buffer->data + buffer->stored, incoming, bytes);
+  memcpy(response->buffer + response->length, data, bytes);
 
-    buffer->stored += bytes;
-    buffer->data[buffer->stored] = '\0';
-  }
+  response->length += bytes;
+  response->buffer[response->length] = '\0';
 
   return bytes;
 }
 
 static int method_is_valid(const char *method) {
-  return method &&
-         (strcmp(method, "GET") == 0 || strcmp(method, "POST") == 0 ||
-          strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0 ||
-          strcmp(method, "DELETE") == 0);
+  if (!method)
+    return 0;
+
+  return strcmp(method, "GET") == 0 || strcmp(method, "POST") == 0 ||
+         strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0 ||
+         strcmp(method, "DELETE") == 0;
 }
 
-static struct curl_slist *build_headers(const char *headers,
-                                        int add_json_content_type) {
-  struct curl_slist *list = NULL;
+static int contains_case_insensitive(const char *text, const char *search) {
+  if (!text || !search || !*search)
+    return 0;
 
-  if (headers && *headers) {
-    size_t length = strlen(headers);
-    char *copy = (char *)malloc(length + 1);
+  size_t search_length = strlen(search);
 
-    if (!copy)
-      return NULL;
+  while (*text) {
+    size_t i = 0;
 
-    memcpy(copy, headers, length + 1);
-
-    char *line = copy;
-
-    while (line && *line) {
-      char *next = strchr(line, '\n');
-
-      if (next) {
-        *next = '\0';
-        next++;
-      }
-
-      size_t line_length = strlen(line);
-
-      while (line_length > 0 &&
-             (line[line_length - 1] == '\r' ||
-              isspace((unsigned char)line[line_length - 1]))) {
-        line[--line_length] = '\0';
-      }
-
-      while (*line && isspace((unsigned char)*line))
-        line++;
-
-      if (*line) {
-        struct curl_slist *updated = curl_slist_append(list, line);
-
-        if (!updated) {
-          curl_slist_free_all(list);
-          free(copy);
-          return NULL;
-        }
-
-        list = updated;
-      }
-
-      line = next;
+    while (i < search_length && text[i] &&
+           tolower((unsigned char)text[i]) ==
+               tolower((unsigned char)search[i])) {
+      i++;
     }
 
-    free(copy);
+    if (i == search_length)
+      return 1;
+
+    text++;
   }
 
-  if (add_json_content_type &&
-      (!headers || !strstr(headers, "Content-Type:"))) {
+  return 0;
+}
+
+static struct curl_slist *build_headers(const char *headers, int has_body) {
+  struct curl_slist *list = NULL;
+  const char *cursor = headers;
+  int has_content_type = 0;
+
+  while (cursor && *cursor) {
+    const char *end = strchr(cursor, '\n');
+
+    size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+
+    while (length > 0 &&
+           (cursor[length - 1] == '\r' || cursor[length - 1] == ' ' ||
+            cursor[length - 1] == '\t')) {
+      length--;
+    }
+
+    while (length > 0 && (*cursor == ' ' || *cursor == '\t')) {
+      cursor++;
+      length--;
+    }
+
+    if (length > 0) {
+      char *line = (char *)malloc(length + 1);
+
+      if (!line) {
+        curl_slist_free_all(list);
+        return NULL;
+      }
+
+      memcpy(line, cursor, length);
+      line[length] = '\0';
+
+      if (contains_case_insensitive(line, "Content-Type:")) {
+        has_content_type = 1;
+      }
+
+      struct curl_slist *updated = curl_slist_append(list, line);
+
+      free(line);
+
+      if (!updated) {
+        curl_slist_free_all(list);
+        return NULL;
+      }
+
+      list = updated;
+    }
+
+    if (!end)
+      break;
+    cursor = end + 1;
+  }
+
+  if (has_body && !has_content_type) {
     struct curl_slist *updated =
         curl_slist_append(list, "Content-Type: application/json");
 
@@ -119,94 +143,110 @@ static struct curl_slist *build_headers(const char *headers,
   return list;
 }
 
-static int perform_request(const char *url, const char *method,
-                           const char *request_body, const char *headers,
-                           char *response_buffer, int response_capacity,
-                           int *status_code) {
-  if (!url || !*url || !method_is_valid(method) || !response_buffer ||
-      response_capacity <= 0) {
+static int perform_request(char *url, char *method, char *request_body,
+                           char *headers, char *response_buffer,
+                           int response_capacity, int *status_code) {
+  if (!url || !method || !response_buffer || response_capacity <= 0 ||
+      !method_is_valid(method)) {
     return -1;
   }
 
   response_buffer[0] = '\0';
 
-  if (status_code)
+  if (status_code) {
     *status_code = 0;
+  }
 
   CURL *curl = curl_easy_init();
 
-  if (!curl)
-    return -1;
-
-  struct http_buffer buffer;
-  buffer.data = response_buffer;
-  buffer.capacity = (size_t)response_capacity;
-  buffer.stored = 0;
-  buffer.overflow = 0;
-
-  int has_body = request_body != NULL &&
-                 (strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
-                  strcmp(method, "PATCH") == 0);
-
-  struct curl_slist *header_list = build_headers(headers, has_body);
-
-  if (headers && *headers && !header_list) {
-    curl_easy_cleanup(curl);
+  if (!curl) {
     return -1;
   }
 
-  if (has_body && !header_list) {
-    curl_easy_cleanup(curl);
-    return -1;
+  HttpResponse response = {response_buffer, (size_t)response_capacity, 0, 0};
+
+  struct curl_slist *header_list = NULL;
+
+  if (headers || request_body) {
+    header_list = build_headers(headers, request_body != NULL);
+
+    if (!header_list && (headers || request_body)) {
+      curl_easy_cleanup(curl);
+      return -1;
+    }
   }
 
-  curl_easy_setopt(curl, CURLOPT_URL, url);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, http_write_callback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, "itsuki-http/0.2.0");
+  CURLcode result = CURLE_OK;
 
-  // Mantiene la verificación TLS activada.
-  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+#define HREQ_SETOPT(option, value)                                             \
+  do {                                                                         \
+    result = curl_easy_setopt(curl, option, value);                            \
+    if (result != CURLE_OK)                                                    \
+      goto cleanup;                                                            \
+  } while (0)
 
-  if (header_list)
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+  HREQ_SETOPT(CURLOPT_URL, url);
+  HREQ_SETOPT(CURLOPT_USERAGENT, HREQ_USER_AGENT);
+  HREQ_SETOPT(CURLOPT_WRITEFUNCTION, http_write_callback);
+  HREQ_SETOPT(CURLOPT_WRITEDATA, &response);
+  HREQ_SETOPT(CURLOPT_CONNECTTIMEOUT, HREQ_CONNECT_TIMEOUT);
+  HREQ_SETOPT(CURLOPT_TIMEOUT, HREQ_TOTAL_TIMEOUT);
+  HREQ_SETOPT(CURLOPT_FOLLOWLOCATION, 1L);
+  HREQ_SETOPT(CURLOPT_MAXREDIRS, 10L);
+  HREQ_SETOPT(CURLOPT_SSL_VERIFYPEER, 1L);
+  HREQ_SETOPT(CURLOPT_SSL_VERIFYHOST, 2L);
 
-  if (strcmp(method, "GET") != 0)
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+  /* Solo permitir HTTP y HTTPS, también en redirecciones. */
+  HREQ_SETOPT(CURLOPT_PROTOCOLS_STR, "http,https");
+  HREQ_SETOPT(CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
 
-  if (has_body) {
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_body);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE,
-                     (curl_off_t)strlen(request_body));
+  if (header_list) {
+    HREQ_SETOPT(CURLOPT_HTTPHEADER, header_list);
   }
 
-  CURLcode result = curl_easy_perform(curl);
-  long response_status = 0;
-
-  if (result == CURLE_OK || result == CURLE_WRITE_ERROR) {
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_status);
-
-    if (status_code)
-      *status_code = (int)response_status;
+  if (strcmp(method, "GET") != 0) {
+    HREQ_SETOPT(CURLOPT_CUSTOMREQUEST, method);
   }
 
-  if (header_list)
-    curl_slist_free_all(header_list);
+  if (request_body && strcmp(method, "GET") != 0) {
+    size_t body_length = strlen(request_body);
 
+    if (body_length > (size_t)LLONG_MAX) {
+      result = CURLE_BAD_FUNCTION_ARGUMENT;
+      goto cleanup;
+    }
+
+    HREQ_SETOPT(CURLOPT_POSTFIELDS, request_body);
+    HREQ_SETOPT(CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)body_length);
+  }
+
+  result = curl_easy_perform(curl);
+
+  if (status_code && (result == CURLE_OK || response.overflow)) {
+    long http_status = 0;
+
+    if (curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status) ==
+        CURLE_OK) {
+      *status_code = (int)http_status;
+    }
+  }
+
+cleanup:
+  curl_slist_free_all(header_list);
   curl_easy_cleanup(curl);
 
-  if (buffer.overflow)
+#undef HREQ_SETOPT
+
+  if (response.overflow) {
+    response_buffer[response.length] = '\0';
     return -2;
+  }
 
-  if (result != CURLE_OK)
+  if (result != CURLE_OK) {
     return -1;
+  }
 
-  return (int)buffer.stored;
+  return (int)response.length;
 }
 
 int http_request(char *url, char *method, char *request_body, char *headers,
@@ -224,18 +264,27 @@ int http_get(char *url, char *body_buffer, int body_capacity,
 
 int http_post_json(char *url, char *json_body, char *body_buffer,
                    int body_capacity, int *status_code) {
+  if (!json_body)
+    return -1;
+
   return perform_request(url, "POST", json_body, NULL, body_buffer,
                          body_capacity, status_code);
 }
 
 int http_put_json(char *url, char *json_body, char *body_buffer,
                   int body_capacity, int *status_code) {
+  if (!json_body)
+    return -1;
+
   return perform_request(url, "PUT", json_body, NULL, body_buffer,
                          body_capacity, status_code);
 }
 
 int http_patch_json(char *url, char *json_body, char *body_buffer,
                     int body_capacity, int *status_code) {
+  if (!json_body)
+    return -1;
+
   return perform_request(url, "PATCH", json_body, NULL, body_buffer,
                          body_capacity, status_code);
 }
