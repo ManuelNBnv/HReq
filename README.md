@@ -1,233 +1,198 @@
-# itsuki-http
+# HReq
 
-Biblioteca HTTP para el lenguaje de programación Itsuki, basada en
-[libcurl](https://curl.se/libcurl/).
+HReq es una biblioteca HTTP para programas escritos en **Itsuki**. Usa **libcurl** para realizar peticiones HTTP/HTTPS e incluye funciones sencillas para trabajar con respuestas JSON.
 
-Permite realizar peticiones HTTP, enviar JSON, configurar cabeceras
-personalizadas y procesar respuestas JSON mediante el parser incluido.
+## Funciones disponibles
 
-## Características
+### Peticiones HTTP
 
-- Peticiones GET, POST, PUT, PATCH y DELETE.
-- Cabeceras HTTP personalizadas.
-- Envío de cuerpos JSON.
-- Recepción de respuestas en buffers administrados por el usuario.
-- Código de estado HTTP.
-- Detección de errores de conexión y respuestas demasiado grandes.
-- Parser JSON incluido.
-- Ejemplos escritos en Itsuki.
+| Función | Uso |
+|---|---|
+| `http_get` | Realiza una petición GET. |
+| `http_post_json` | Envía un cuerpo JSON mediante POST. |
+| `http_put_json` | Envía un cuerpo JSON mediante PUT. |
+| `http_patch_json` | Envía un cuerpo JSON mediante PATCH. |
+| `http_delete` | Realiza una petición DELETE. |
+| `http_request` | Permite elegir el método, el cuerpo y las cabeceras. |
 
-## Estructura del proyecto
+Las respuestas se escriben en un buffer que proporciona el programa que hace la petición. Las funciones no reservan ese buffer por ti: asegúrate de que tenga capacidad suficiente.
 
-```text
-itsuki-http/
-├── examples/
-│   ├── client.suki
-│   ├── api.suki
-│   └── methods.suki
-├── img/
-│   └── itsuki_logo.png
-├── include/
-│   ├── http.huki
-│   ├── json.h
-│   └── json.huki
-├── src/
-│   ├── http.c
-│   └── json.c
-├── LICENSE
-├── Makefile
-└── README.md
-```
-
-## Requisitos
-
-- Compilador Itsuki disponible mediante el comando `itsuki`.
-- GCC o un compilador C compatible.
-- libcurl con las bibliotecas de desarrollo necesarias.
-- Make.
-
-El Makefile de este proyecto comprueba la presencia de libcurl de
-32 bits en `/usr/lib/i386-linux-gnu/libcurl.so.4` y utiliza las
-cabeceras de `/usr/include/x86_64-linux-gnu`. Es posible que debas
-adaptar esas rutas a tu distribución y a la arquitectura de tu
-compilador.
-
-## Compilación
-
-Desde la carpeta del proyecto:
-
-```bash
-make
-```
-
-Esto compila los tres ejemplos disponibles.
-
-Para compilar un ejemplo individual:
-
-```bash
-make build-client
-make build-api
-make build-methods
-```
-
-Para ejecutar los ejemplos:
-
-```bash
-make run-client
-make run-api
-make run-methods
-```
-
-Para eliminar los ejecutables generados:
-
-```bash
-make clean
-```
-
-## Uso de la biblioteca HTTP
-
-Incluye la interfaz HTTP en tu archivo Itsuki:
-
-```c
-#include "../include/http.huki"
-```
-
-Las funciones reciben buffers que administra el programa que realiza
-la petición. Asegúrate de proporcionar suficiente espacio para la
-respuesta.
-
-### GET
-
-```c
-char response[4096];
-int status = 0;
-
-int received = http_get(
-    "https://jsonplaceholder.typicode.com/posts/1",
-    response,
-    4096,
-    &status
-);
-
-if (received >= 0) {
-    printf("HTTP: %d\n", status);
-    printf("%s\n", response);
-}
-```
-
-### POST con JSON
-
-```c
-char response[4096];
-int status = 0;
-
-int received = http_post_json(
-    "https://jsonplaceholder.typicode.com/posts",
-    "{\"title\":\"Hola\",\"body\":\"Prueba\",\"userId\":1}",
-    response,
-    4096,
-    &status
-);
-
-if (received >= 0) {
-    printf("HTTP: %d\n", status);
-    printf("%s\n", response);
-}
-```
-
-### PUT, PATCH y DELETE
-
-Las funciones disponibles son:
-
-```c
-http_put_json(url, json_body, response, capacity, &status);
-http_patch_json(url, json_body, response, capacity, &status);
-http_delete(url, response, capacity, &status);
-```
-
-Las firmas completas están declaradas en `include/http.huki`.
-
-## Peticiones personalizadas
-
-Usa `http_request()` para seleccionar el método y enviar cabeceras
-personalizadas.
-
-```c
-char response[4096];
-char* headers = "Accept: application/json\nX-App: Itsuki";
-int status = 0;
-
-int received = http_request(
-    "https://jsonplaceholder.typicode.com/posts/1",
-    "GET",
-    NULL,
-    headers,
-    response,
-    4096,
-    &status
-);
-
-if (received >= 0) {
-    printf("HTTP: %d\n", status);
-    printf("%s\n", response);
-}
-```
-
-Las cabeceras se separan mediante saltos de línea (`\n`).
-
-Para enviar un token de autenticación, puedes añadir una cabecera
-como `Authorization: Bearer TU_TOKEN`. No publiques tokens reales
-en repositorios públicos.
-
-## Interpretación de resultados
+### Interpretación del resultado
 
 Las funciones HTTP devuelven:
 
-| Resultado | Significado |
-|---|---|
-| `0` o superior | Cantidad de bytes recibidos |
-| `-1` | Error de petición o conexión |
-| `-2` | La respuesta supera la capacidad del buffer |
+| Retorno | Significado |
+|---:|---|
+| `0` o un número positivo | Cantidad de bytes recibidos. |
+| `-1` | Error de petición o conexión. |
+| `-2` | La respuesta supera la capacidad del buffer. |
 
-El código HTTP se devuelve mediante `status_code`.
+El código HTTP se recibe por separado mediante el parámetro `status_code`. Por eso, un estado HTTP `404` o `500` no significa necesariamente que la conexión haya fallado: la petición puede haber terminado y devuelto un código HTTP de error.
 
-Un código HTTP como `404` o `500` no implica necesariamente un error
-de conexión: la petición puede haber terminado correctamente y la
-función puede devolver la cantidad de bytes recibidos.
+### Parser JSON
 
-Si la conexión falla antes de obtener una respuesta HTTP, el código
-de estado normalmente permanece en `0`.
+HReq incluye estas funciones para consultar valores en un objeto JSON:
 
-## Parser JSON
+- `json_get_string(json, key, output, output_capacity)`
+- `json_get_int(json, key, output)`
+- `json_get_bool(json, key, output)`
+- `json_is_null(json, key)`
 
-El proyecto incluye un parser JSON en:
+Las búsquedas admiten claves anidadas con puntos, por ejemplo `usuario.perfil.activo`.
 
-- `include/json.h`
-- `include/json.huki`
-- `src/json.c`
+## Archivos del proyecto
 
-El ejemplo `examples/api.suki` combina una petición HTTP con el
-parser para leer datos de una API.
+La versión actual mantiene estos archivos en la raíz:
 
-Consulta `examples/api.suki` para ver el uso concreto de la interfaz
-JSON incluida en este proyecto.
+```text
+HReq/
+├── hreq.huki
+├── http.c
+├── json.huki
+├── json.h
+├── json.c
+├── libcurl.so
+├── img/
+└── README.md
+```
 
-## Ejemplos
+- `hreq.huki`: declaraciones de las funciones HTTP para Itsuki.
+- `http.c`: implementación de las peticiones HTTP mediante libcurl.
+- `json.huki`: declaraciones del parser JSON para Itsuki.
+- `json.h` y `json.c`: interfaz e implementación del parser JSON.
+- `libcurl.so`: biblioteca compartida de libcurl incluida en el repositorio.
+- `img/`: recursos gráficos del proyecto.
 
-| Archivo | Propósito |
-|---|---|
-| `examples/client.suki` | Cliente HTTP básico |
-| `examples/api.suki` | Petición HTTP y lectura de JSON |
-| `examples/methods.suki` | Pruebas de los métodos HTTP |
+## Requisitos
 
-Los ejemplos utilizan JSONPlaceholder, un servicio público de
-pruebas. Sus operaciones de escritura son simuladas y no guardan
-cambios permanentes en una base de datos.
+- El compilador de Itsuki (`itsuki`).
+- Un compilador C compatible, como GCC.
+- Las cabeceras de desarrollo de libcurl, incluida `curl/curl.h`.
+- Una biblioteca libcurl compatible con la arquitectura y el entorno de enlace que use tu compilador de Itsuki.
+
+La presencia de `libcurl.so` en el repositorio no garantiza por sí sola que todas sus dependencias del sistema estén instaladas. Si la compilación no encuentra `curl/curl.h` o falla al enlazar libcurl, instala las cabeceras y dependencias adecuadas para tu distribución y arquitectura.
+
+## Uso desde Itsuki
+
+Incluye las interfaces que vayas a utilizar:
+
+```c
+#include <hreq.huki>
+#include <json.huki>
+```
+
+### Ejemplo: petición GET
+
+```c
+#include <fundamental.huki>
+#include <hreq.huki>
+
+fn main() -> int {
+    var respuesta: char[4096];
+    var estado: int = 0;
+
+    var recibidos: int = http_get(
+        "https://jsonplaceholder.typicode.com/posts/1",
+        respuesta,
+        4096,
+        &estado
+    );
+
+    if (recibidos < 0) {
+        printf("Error en la petición: %d\n", recibidos);
+        return 1;
+    }
+
+    printf("Estado HTTP: %d\n", estado);
+    printf("Respuesta: %s\n", respuesta);
+    return 0;
+}
+```
+
+### Ejemplo: POST con JSON
+
+```c
+#include <fundamental.huki>
+#include <hreq.huki>
+
+fn main() -> int {
+    var respuesta: char[4096];
+    var estado: int = 0;
+
+    var recibidos: int = http_post_json(
+        "https://jsonplaceholder.typicode.com/posts",
+        "{\"title\":\"Hola\",\"body\":\"Prueba\",\"userId\":1}",
+        respuesta,
+        4096,
+        &estado
+    );
+
+    if (recibidos < 0) {
+        printf("Error en la petición: %d\n", recibidos);
+        return 1;
+    }
+
+    printf("Estado HTTP: %d\n", estado);
+    printf("Respuesta: %s\n", respuesta);
+    return 0;
+}
+```
+
+Estos ejemplos muestran el uso de las declaraciones de la API; para compilar, también hay que enlazar la implementación nativa de HReq y libcurl como se indica a continuación.
+
+## Compilación
+
+El compilador necesita encontrar `http.c` para resolver las funciones HTTP, y el enlazador necesita libcurl. Desde una instalación donde HReq esté en `~/.itsuki/packages/hreq`, una forma explícita de compilar es:
+
+```bash
+itsuki build client.suki \
+  "$HOME/.itsuki/packages/hreq/http.c" \
+  -I"$HOME/.itsuki/packages/hreq" \
+  -I/usr/include/x86_64-linux-gnu \
+  -L"$HOME/.itsuki/packages/hreq" \
+  -lcurl \
+  -o client
+```
+
+Adapta las rutas de las cabeceras y de la biblioteca a tu sistema. La ruta `/usr/include/x86_64-linux-gnu` es específica de algunas instalaciones Debian/Ubuntu y puede ser distinta en otras distribuciones.
+
+**Nota sobre la compilación automática:** `hreq.huki` y `http.c` tienen nombres base diferentes. Si tu versión del compilador descubre automáticamente el archivo de implementación a partir del nombre del encabezado, no debes asumir que `hreq.huki` encontrará `http.c` por sí solo. Además, descubrir `http.c` no añade automáticamente la dependencia externa `-lcurl`. La forma de declarar dependencias automáticamente depende de las funciones que admita tu versión del gestor de paquetes de Itsuki.
+
+## Cabeceras HTTP personalizadas
+
+Usa `http_request` cuando necesites indicar el método o añadir cabeceras propias:
+
+```c
+var respuesta: char[4096];
+var estado: int = 0;
+
+var recibidos: int = http_request(
+    "https://jsonplaceholder.typicode.com/posts/1",
+    "GET",
+    null,
+    "Accept: application/json\nX-App: Itsuki",
+    respuesta,
+    4096,
+    &estado
+);
+```
+
+Las cabeceras se separan mediante saltos de línea (`\n`). En las peticiones con cuerpo, HReq agrega `Content-Type: application/json` si no se proporcionó una cabecera `Content-Type`.
+
+No publiques tokens de acceso ni otros secretos en repositorios públicos.
+
+## Seguridad y límites
+
+- HReq configura tiempos máximos para la conexión y la petición.
+- Sigue redirecciones HTTP/HTTPS, con un límite de redirecciones.
+- Limita los protocolos permitidos a HTTP y HTTPS.
+- Verifica los certificados TLS mediante las opciones de libcurl.
+- Si la respuesta no cabe en el buffer, devuelve `-2`; aumenta el buffer o gestiona ese resultado.
+- El código de estado HTTP se informa por separado del resultado de la operación.
 
 ## Licencia
 
-Consulta el archivo `LICENSE` para conocer los términos de uso,
-modificación y distribución.
+Consulta `LICENSE.txt` para ver los términos de licencia incluidos con esta versión del proyecto.
 
 <p align="center"> <img src="img/itsuki_logo.png" alt="Itsuki Programming Language" width="160"> </p>
 

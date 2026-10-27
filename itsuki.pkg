@@ -1,7 +1,0 @@
-
-include_dirs=/usr/include/x86_64-linux-gnu
-library_dirs=.
-libraries=curl
-pkg_config_cflags=libcurl
-
-
